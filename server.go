@@ -7,6 +7,7 @@ func NewWsServer() * WsServer{
          clients: make(map[*Client]bool),
          join: make(chan *Client),
          leave: make(chan *Client),
+         rooms: map[*Room]bool{},
     }
 }
 
@@ -16,6 +17,7 @@ type WsServer struct{
     join  chan *Client
     leave chan *Client
     clients map[*Client] bool
+    rooms map[*Room] bool
 }
 
 func(s *WsServer)Run(){
@@ -39,4 +41,23 @@ func (s *WsServer) forwardMsg(msg []byte){
        
           c.send <- msg
      }
+}
+func (s *WsServer)findRoom(name string) *Room{
+     var room *Room
+
+     for r := range s.rooms{
+         if r.name == name{
+             room = r
+             break
+         }
+     }
+     return room
+}
+func (s *WsServer)createRoom(name string) *Room{
+    room := NewRoom(name)
+
+    go room.RunRoom()
+
+    s.rooms[room]=true
+    return room
 }

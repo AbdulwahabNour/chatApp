@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"runtime"
 
 	"github.com/gorilla/mux"
 )
 
 
 func main(){
-      runtime.GOMAXPROCS(1)
+ 
       addr := flag.String("addr", ":8080", "server address")
       flag.Parse()
 

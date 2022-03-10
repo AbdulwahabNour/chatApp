@@ -23,15 +23,17 @@ var upgrader = websocket.Upgrader{
 
 
 func NewClient(conn *websocket.Conn,ws  *WsServer) *Client{
-    return &Client{conn: conn,
-                   wsServer: ws,
-                send: make(chan []byte),}
+    return &Client{ conn: conn,
+                    wsServer: ws,
+                    send: make(chan []byte),
+                    rooms: make(map[*Room]bool),}
 }
 
 type Client struct {
     conn *websocket.Conn 
     wsServer *WsServer  
     send chan []byte
+    rooms map[*Room]bool
 }
 func(c *Client)read(){
       defer c.conn.Close()
@@ -63,6 +65,7 @@ func(c *Client)write(){
         ticker.Stop()
         c.conn.Close()
     }()
+    c.conn.PingHandler()
  
     for{
         select {
@@ -98,6 +101,13 @@ func(c *Client)write(){
 
 }
 
+func(c *Client)disconnect(){
+    c.wsServer.leave <- c
+    for r := range c.rooms{
+          r.leave <- c
+    }
+}
+
 
 func Wshandler(w http.ResponseWriter, r *http.Request, ws *WsServer){
       conn, err := upgrader.Upgrade(w, r, nil)
@@ -113,3 +123,5 @@ func Wshandler(w http.ResponseWriter, r *http.Request, ws *WsServer){
       ws.join <-client     
   
 }
+
+ 
