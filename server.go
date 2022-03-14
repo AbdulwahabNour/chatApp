@@ -56,8 +56,9 @@ func (s *WsServer)findRoom(name string) *Room{
 func (s *WsServer)createRoom(name string) *Room{
     room := NewRoom(name)
 
-    go room.RunRoom()
+     go room.RunRoom()
 
     s.rooms[room]=true
+ 
     return room
 }
