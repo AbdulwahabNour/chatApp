@@ -1,10 +1,16 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
 
-func NewRoom(name string) *Room {
+	"github.com/google/uuid"
+)
+
+func NewRoom(name string, private bool) *Room {
 	return &Room{
-		name:    name,
+		ID:      uuid.New(),
+		Name:    name,
+		Private: private,
 		clients: make(map[*Client]bool),
 		join:    make(chan *Client),
 		leave:   make(chan *Client),
@@ -13,17 +19,21 @@ func NewRoom(name string) *Room {
 }
 
 type Room struct {
-	name    string
+	ID      uuid.UUID `json:"id"`
+	Name    string    `json:"name"`
 	clients map[*Client]bool
 	join    chan *Client
 	leave   chan *Client
 	forward chan *Message
+	Private bool `json:"private"`
 }
 
 func (r *Room) RunRoom() {
+
 	for {
 		select {
 		case c := <-r.join:
+
 			r.addClientInRoom(c)
 		case c := <-r.leave:
 			r.removeClientFromRoom(c)
@@ -36,8 +46,9 @@ func (r *Room) RunRoom() {
 }
 
 func (r *Room) addClientInRoom(c *Client) {
-	r.notifyClientJoined(c)
 	r.clients[c] = true
+	r.notifyClientJoined(c)
+	
 
 }
 func (r *Room) removeClientFromRoom(c *Client) {
@@ -46,7 +57,9 @@ func (r *Room) removeClientFromRoom(c *Client) {
 	}
 }
 func (r *Room) forwardToClientsInRoom(msg []byte) {
+ 
 	for c := range r.clients {
+	 
 		c.send <- msg
 	}
 }
@@ -54,10 +67,22 @@ func (r *Room) forwardToClientsInRoom(msg []byte) {
 func (r *Room) notifyClientJoined(c *Client) {
 	msg := &Message{
 		Action:  JoinRoomActon,
-		Target:  r.name,
+		Target:  r,
 		Message: fmt.Sprintf("%s joind the room", c.Name),
-		Sender:  c,
+		Sender:  []*Client{c},
 	}
-
+  
 	r.forwardToClientsInRoom(msg.encode())
+}
+func (r *Room) GetId() string {
+	return r.ID.String()
+}
+func (r *Room) GetName() string {
+	return r.Name
+}
+func (r *Room) registerClientInRoom(c *Client) {
+	if !r.Private {
+		r.notifyClientJoined(c)
+	}
+	r.clients[c] = true
 }

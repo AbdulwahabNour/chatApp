@@ -9,7 +9,8 @@ var app = Vue.createApp({
             rooms: [],
             user: { name: "" },
             messages: [],
-            newMessage: ""
+            newMessage: "",
+            users: [],
         }
     },
     mounted: function () {
@@ -23,6 +24,7 @@ var app = Vue.createApp({
             this.ws = new WebSocket(this.serverUrl + "?name=" + this.user.name);
             this.ws.addEventListener('open', (event) => { this.onWebsocketOpen(event) });
             this.ws.addEventListener('message', (event) => { this.handleNewMessage(event) });
+            this.ws.addEventListener('close', (event) => { this.onWebsocketClose(event) });
 
 
 
@@ -31,37 +33,75 @@ var app = Vue.createApp({
         onWebsocketOpen() {
             console.log("connected to ws");
         },
+        onWebsocketClose() {
+            console.log("connection close")
+        },
         handleNewMessage(event) {
 
             let data = event.data;
-
-
             data = data.split(/\r?\n/);
-
-
+            console.log(data)
             for (let i = 0; i < data.length; i++) {
-
                 let msg = JSON.parse(data[i]);
-                const room = this.findroom(msg.target);
+                console.log(msg)
 
-                if (typeof (room) !== "undefined") {
-                    room.message.push(msg)
+                switch (msg.action) {
+                    case "send-message":
+                        this.handleChatMessage(msg);
+                        break;
+
+                    case "user-join":
+                        this.handleUserJoined(msg);
+                        break;
+                    case "user-left":
+                        this.handleUserLeft(msg);
+                        break;
+                    case "join-room":
+                        this.handleJoinRoom(msg);
+                        break;
+
+                    default:
+                        break;
                 }
+
 
             }
 
         },
+        handleAllusers(msg) {
+
+        },
+        handleChatMessage(msg) {
+            const room = this.findRoombyID(msg.target.id);
+
+            if (typeof (room) !== "undefined") {
+                room.message.push(msg)
+            }
+        },
         sendMessage(room) {
+
             if (room.newMessage !== "") {
                 this.ws.send(JSON.stringify({
                     action: 'send-message',
                     message: room.newMessage,
-                    target: room.name
+                    target: {
+                        id: room.id,
+                        name: room.name,
+                    }
                 }));
                 room.newMessage = "";
 
             }
 
+        },
+        handleJoinRoom(msg) {
+            room = msg.target;
+            room.name = room.private ? msg.sender.name : room.name;
+            room.message = [];
+            if (this.findRoombyID(room.id) === undefined) {
+                this.rooms.push(room);
+            }
+            this.handleChatMessage(msg);
         },
         findroom(roomName) {
             for (let i = 0; i < this.rooms.length; i++) {
@@ -70,13 +110,20 @@ var app = Vue.createApp({
                 }
             }
         },
+        findRoombyID(roomID) {
+            for (let i = 0; i < this.rooms.length; i++) {
+                if (this.rooms[i].id == roomID) {
+                    return this.rooms[i]
+                }
+            }
+
+        },
         joinRoom() {
             this.ws.send(JSON.stringify({
                 action: 'join-room',
                 message: this.roomInput
             }));
             this.messages = [];
-            this.rooms.push({ "name": this.roomInput, "message": [] })
             this.roomInput = ""
         },
         leaveRoom(room) {
@@ -91,7 +138,27 @@ var app = Vue.createApp({
                     break;
                 }
             }
+        },
+        handleUserJoined(msg) {
+            for (let i = 0; i < msg.Sender.length; i++) {
+                this.users.push(msg.Sender[i])
+            }
+
+        },
+        handleUserLeft(msg) {
+            for (let i = 0; i < this.users.length; i++) {
+                if (this.users[i].id == msg.Sender[0].id) {
+                    this.users.splice(i, 1);
+                }
+            }
+        },
+        joinPrivateRoom(user) {
+            this.ws.send(JSON.stringify({
+                action: "join-room-private",
+                message: user.id
+            }))
         }
+
 
     }
 

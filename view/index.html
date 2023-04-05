@@ -7,11 +7,11 @@
     <link type="text/css" rel="stylesheet" href="//unpkg.com/bootstrap-vue@latest/dist/bootstrap-vue.min.css" />
 
     <!-- Load polyfills to support older browsers -->
-    <script src="//polyfill.io/v3/polyfill.min.js?features=es2015%2CIntersectionObserver"
-        crossorigin="anonymous"></script>
+    <!-- <script src="//polyfill.io/v3/polyfill.min.js?features=es2015%2CIntersectionObserver"
+        crossorigin="anonymous"></script> -->
 
     <!-- Load Vue followed by BootstrapVue -->
-    <script src="https://unpkg.com/vue"></script>
+    <!-- <script src="https://unpkg.com/vue"></script> -->
     <script src="//unpkg.com/bootstrap-vue@latest/dist/bootstrap-vue.min.js"></script>
 
     <!-- Load the following for BootstrapVueIcons support -->
@@ -23,7 +23,17 @@
         <div class="container h-100">
             <div class="row justify-content-center h-100">
 
+                <div class="col-12">
+                    <div class="row">
+                        <div class="col-2 card profile" v-for="user in users" :key="user.id">
+                            <div class="card-header">{{user.name}}</div>
+                            <div class="card-body">
+                                <button class="btn btn-primary" @click="joinPrivateRoom(user)"> Send Message</button>
+                            </div>
+                        </div>
 
+                    </div>
+                </div>
                 <div class="col-12 form" v-if="!ws">
                     <div class="input-group">
                         <input v-model="user.name" class="form-control name"
@@ -37,6 +47,9 @@
                 </div>
 
                 <div class="col-12 room" v-if="ws != null">
+                    <div>
+                        <h3>Welcome {{user.name}}</h3>
+                    </div>
                     <div class="input-group">
                         <input v-model="roomInput" class="form-control name"
                             placeholder="Type the room you want to join" @keyup.enter.exact="joinRoom" />
@@ -60,7 +73,8 @@
                             <div v-for="(message, key) in room.message" :key="key"
                                 class="d-flex justify-content-start mb-4">
                                 <div class="msg_cotainer">
-                                    <span v-if="message.action == 'send-message'"> {{message.Sender.name}} says :</span>
+                                    <span v-if="message.action == 'send-message'"> {{message.Sender[0].name}}
+                                        :</span>
                                     {{message.message}}
                                     <span class="msg_name" v-if="message.sender">{{message.sender.name}}</span>
                                 </div>
@@ -87,7 +101,7 @@
         </div>
     </div>
 </body>
-
+<script src="static/assets/vue.js"></script>
 <script src="static/assets/app.js"></script>
 
 </html>

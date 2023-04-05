@@ -1,11 +1,13 @@
 package main
 
 import (
-	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -23,6 +25,7 @@ var upgrader = websocket.Upgrader{
 
 func NewClient(conn *websocket.Conn, ws *WsServer, name string) *Client {
 	return &Client{
+		ID:       uuid.New(),
 		Name:     name,
 		conn:     conn,
 		wsServer: ws,
@@ -31,7 +34,8 @@ func NewClient(conn *websocket.Conn, ws *WsServer, name string) *Client {
 }
 
 type Client struct {
-	Name     string `json:"name"`
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
 	conn     *websocket.Conn
 	wsServer *WsServer
 	send     chan []byte
@@ -39,13 +43,19 @@ type Client struct {
 }
 
 func (c *Client) read() {
-	defer c.conn.Close()
+
+	defer func() {
+		c.conn.Close()
+		c.disconnect()
+	}()
+
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 
 	c.conn.SetPongHandler(func(s string) error {
-
+		fmt.Println("handle pong => ", s)
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+
 		return nil
 	})
 
@@ -54,16 +64,17 @@ func (c *Client) read() {
 
 		if err != nil {
 			log.Println("Read :", err)
-			return
+			break
 		}
-      
+
 		c.handleNewMessage(jsonMsg)
 	}
 
 }
 
 func (c *Client) write() {
-	ticker := time.NewTicker(pingPeriod) 
+
+	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
 		c.conn.Close()
@@ -76,22 +87,18 @@ func (c *Client) write() {
 
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
+
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
-				log.Println("write :", err)
+
 				return
 			}
 			w.Write(msg)
-			n := len(c.send)
- 
-			for i := 0; i < n; i++ {
-				w.Write([]byte("/n"))
-				w.Write(<-c.send)
-			}
+			 
 			if err := w.Close(); err != nil {
 				return
 			}
@@ -99,6 +106,7 @@ func (c *Client) write() {
 
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				fmt.Println("ticker")
 				return
 			}
 
@@ -121,50 +129,101 @@ func (c *Client) disconnect() {
 func (c *Client) handleNewMessage(jsonMsg []byte) {
 
 	var msg Message
- 
-	if err := json.Unmarshal(jsonMsg, &msg); err != nil {
+	
+	
+	if err := msg.decode(jsonMsg); err != nil {
 		log.Printf("Error on unmarshal Message %s", err)
-
+		return
 	}
-	msg.Sender = c
 
+	msg.Sender = []*Client{c}
+ 
 	switch msg.Action {
 
 	case SendMessageAction:
-		roomName := msg.Target
-		if room := c.wsServer.findRoom(roomName); room != nil {
+		
+		roomID := msg.Target.GetId()
+		room := c.wsServer.findRoomByID(roomID)
+		if room != nil {
 			room.forward <- &msg
 		}
+
 	case JoinRoomActon:
 		c.JoinRoomMessage(msg)
+
 	case LeaveRoomAction:
 		c.LeaveRoomMessage(msg)
 
+	case JoinRoomPrivateAction:
+
+		c.handleJoinRoomPrivate(msg)
+
 	}
+}
+func (c *Client) handleJoinRoomPrivate(m Message) {
+
+         target := c.wsServer.findClientByID(m.Message)
+		 if target == nil{
+			 return
+		 }
+
+		 roomName := m.Message + c.getUserId()
+	 
+		 c.joinRoom(roomName, target)
+		 c.joinRoom(roomName, c)
+
+}
+func (c *Client)joinRoom(roomName string, sender *Client){
+	  room := c.wsServer.findRoomByName(roomName)
+ 
+	if room == nil {
+		
+		room = c.wsServer.createRoom(roomName, sender != nil)
+	}
+	if sender == nil && room.Private {
+              return
+	}
+	
+	if !c.isInRoom(room){
+		c.rooms[room] = true 
+		room.join <- c 
+	}
+
+
+}
+func(c *Client)isInRoom(r *Room)bool{
+	 if _,ok := c.rooms[r]; ok{
+		 return true
+	 }
+
+	 return false
 }
 func (c *Client) JoinRoomMessage(msg Message) {
 	roomName := msg.Message
-	room := c.wsServer.findRoom(roomName)
-	if room == nil {
-		room = c.wsServer.createRoom(roomName)
-	}
-	c.rooms[room] = true
-	room.join <- c
+	c.joinRoom(roomName, nil)
+ 
 }
 func (c *Client) LeaveRoomMessage(msg Message) {
 
-	room := c.wsServer.findRoom(msg.Message)
+	roomId := msg.Target.GetId()
+	room := c.wsServer.findRoomByID(roomId)
 
 	if room == nil {
 		return
 	}
+
 	if _, ok := c.rooms[room]; ok {
 		delete(c.rooms, room)
 	}
+
 	room.leave <- c
+}
+func (c *Client)getUserId()string{
+	return c.ID.String()
 }
 
 func Wshandler(w http.ResponseWriter, r *http.Request, ws *WsServer) {
+
 	name, ok := r.URL.Query()["name"]
 	if !ok || len(name[0]) < 1 {
 		log.Println("Url parameter 'name' is missing")
@@ -182,5 +241,7 @@ func Wshandler(w http.ResponseWriter, r *http.Request, ws *WsServer) {
 	go client.write()
 
 	ws.join <- client
+
+	fmt.Printf("%v \n %v \n", ws.rooms, runtime.NumGoroutine())
 
 }
